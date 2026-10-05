@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Alert, Box, CircularProgress, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField } from '@mui/material';
 import apiClient from "../../api/client.js";
 
 const columns = [
@@ -27,13 +27,34 @@ const columns = [
             );
         }
     },
-    { field: 'status', headerName: 'Status', width: 130 },
+    {
+        field: 'status',
+        headerName: 'Status',
+        width: 170,
+        renderCell: (params) => {
+            const statusColors = {
+                available: 'success',
+                in_use: 'info',
+                under_maintenance: 'warning',
+                offline: 'error',
+            };
+            const status = String(params.value);
+            return (
+                <Chip
+                    label={status.replaceAll('_', ' ')}
+                    color={statusColors[status] || 'default'}
+                    size="small"
+                    sx={{ textTransform: 'capitalize' }}
+                />
+            );
+        },
+    },
     { field: 'hospital_id', headerName: 'Hospital ID', width: 110, type: 'number' },
 ];
 
 const STATUS_OPTIONS = ['ACTIVE', 'MAINTENANCE', 'RETIRED'];
 
-function EquipmentDataGrid({ onSuccess }) {
+function EquipmentDataGrid({ onSuccess, canCreate = true }) {
     const [equipmentList, setEquipmentList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -91,16 +112,21 @@ function EquipmentDataGrid({ onSuccess }) {
 
     return (
         <Box>
-            <Button variant="contained" color="primary" sx={{ mb: 3 }} onClick={() => {
+            {canCreate && <Button variant="contained" color="primary" sx={{ mb: 3 }} onClick={() => {
                 setDialogError(null);
                 setDialogOpen(true);
-            }}>+ Add Equipment</Button>
+            }}>+ Add Equipment</Button>}
             
             <Box sx={{ height: 400, width: '100%' }}>
                 <DataGrid 
                     rows={equipmentList} 
                     columns={columns} 
                     getRowId={(row) => row.id} 
+                    showToolbar
+                    initialState={{
+                        pagination: { paginationModel: { page: 0, pageSize: 5 } },
+                    }}
+                    pageSizeOptions={[5, 10, 25]}
                     sx={{
                         border: 'none',
                         backgroundColor: 'white',
@@ -122,7 +148,7 @@ function EquipmentDataGrid({ onSuccess }) {
                 />
             </Box>
 
-            <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
+            <Dialog open={canCreate && dialogOpen} onClose={() => setDialogOpen(false)}>
                 <DialogTitle>Add New Equipment</DialogTitle>
                 <DialogContent>
                     <Stack spacing={2} sx={{ mt: 1, minWidth: 300 }}>

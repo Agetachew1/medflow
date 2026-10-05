@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Select, MenuItem, InputLabel, FormControl } from '@mui/material';
+import apiClient from '../../api/client.js';
 
 export default function CreateUserModal({ open, onClose }) {
     const [username, setUsername] = useState('');
@@ -8,27 +9,17 @@ export default function CreateUserModal({ open, onClose }) {
     const [hospitalId, setHospitalId] = useState('');
 
     const handleSubmit = async () => {
-        const token = localStorage.getItem('token') || localStorage.getItem('access_token');
-        const response = await fetch('http://localhost:8001/users/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
+        try {
+            await apiClient.post('/users/', {
                 username,
                 password,
                 role,
                 hospital_id: parseInt(hospitalId)
-            })
-        });
-
-        if (response.ok) {
+            });
             alert('User created successfully!');
             onClose();
-        } else {
-            const err = await response.json();
-            alert(`Error: ${err.detail || 'Failed to create user'}`);
+        } catch (err) {
+            alert(`Error: ${err.response?.data?.detail || 'Failed to create user'}`);
         }
     };
 

@@ -13,7 +13,7 @@ const columns = [
 ];
 
 // Ensure this matches your WorkOrderPriority enum in FastAPI
-const PRIORITY_OPTIONS = ['', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+const PRIORITY_OPTIONS = ['', 'LOW', 'MEDIUM', 'CRITICAL'];
 
 function DiscrepancyDataGrid() {
     const [priority, setPriority] = useState('');
@@ -70,6 +70,11 @@ function DiscrepancyDataGrid() {
                         rows={discrepancies}
                         columns={columns}
                         getRowId={(row) => row.work_order_id} 
+                        showToolbar
+                        initialState={{
+                            pagination: { paginationModel: { page: 0, pageSize: 5 } },
+                        }}
+                        pageSizeOptions={[5, 10, 25]}
                     />
                 </Box>
             )}

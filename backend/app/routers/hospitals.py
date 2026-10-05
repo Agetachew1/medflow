@@ -1,41 +1,46 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.dependencies import get_db, require_role
+from backend.app.dependencies import get_current_user, get_db, require_role
 from backend.app.models.hospital import Hospital
 from backend.app.models.equipment import Equipment
 from backend.app.models.user import User
 from backend.app.models.work_order import WorkOrder
-from backend.app.models.enums import UserRole, WorkOrderStatus
+from backend.app.models.enums import EquipmentStatus, UserRole, WorkOrderStatus
 
 router = APIRouter(prefix="/hospitals", tags=["hospitals"])
 
 @router.get("/maintenance-flags")
-async def get_maintenance_flags(db: AsyncSession = Depends(get_db)):
-    hospitals_result = await db.execute(select(Hospital))
-    hospitals = hospitals_result.scalars().all()
-    
-    equip_result = await db.execute(select(Equipment))
-    equipments = equip_result.scalars().all()
-
-    flags = []
-    for h in hospitals:
-        h_equip = [e for e in equipments if e.facility_id == h.id]
-        total = len(h_equip)
-        if total == 0:
-            continue
-            
-        maint_count = sum(1 for e in h_equip if "maintenance" in str(e.status).lower() or "down" in str(e.status).lower())
-        
-        if (maint_count / total) >= 0.3:  
-            flags.append({
-                "hospital_id": h.id,
-                "name": h.name,
-                "total_equipment": total,
-                "maintenance_count": maint_count
-            })
-    return flags
+async def get_maintenance_flags(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    maintenance_count = func.sum(
+        case(
+            (
+                Equipment.status == EquipmentStatus.UNDER_MAINTENANCE,
+                1,
+            ),
+            else_=0,
+        )
+    )
+    statement = (
+        select(
+            Hospital.id.label("hospital_id"),
+            Hospital.name,
+            func.count(Equipment.id).label("total_equipment"),
+            maintenance_count.label("maintenance_count"),
+        )
+        .join(Equipment, Equipment.facility_id == Hospital.id)
+        .group_by(Hospital.id, Hospital.name)
+        .having(
+            maintenance_count * 1.0 / func.count(Equipment.id) > 0.3
+        )
+        .order_by(Hospital.id)
+    )
+    result = await db.execute(statement)
+    return [dict(row) for row in result.mappings().all()]
 
 @router.get("/supervisors/{supervisor_id}/reporting-lines")
 async def get_reporting_lines(
@@ -49,7 +54,11 @@ async def get_reporting_lines(
         .join(Hospital, Hospital.id == User.hospital_id)
         .join(WorkOrder, WorkOrder.technician_id == User.id)
         .where(Hospital.supervisor_id == supervisor_id)
-        .where(WorkOrder.status == WorkOrderStatus.PENDING)
+        .where(
+            WorkOrder.status.in_(
+                [WorkOrderStatus.PENDING, WorkOrderStatus.IN_PROGRESS]
+            )
+        )
     )
     
     result = await db.execute(statement)

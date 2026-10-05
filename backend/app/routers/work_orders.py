@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from pydantic import BaseModel
 
-from backend.app.dependencies import get_db, require_role
+from backend.app.dependencies import get_current_user, get_db, require_role
 from backend.app.models.work_order import WorkOrder
 from backend.app.models.equipment import Equipment
 from backend.app.models.user import User
@@ -27,7 +27,7 @@ async def list_colocation_discrepancies(
     # Change type from WorkOrderPriority to str to prevent the 422 block
     priority: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(get_current_user),
 ):
     statement = (
         select(
@@ -50,16 +50,48 @@ async def list_colocation_discrepancies(
     result = await db.execute(statement.order_by(WorkOrder.id))
     return [dict(row) for row in result.mappings().all()]
 
+@router.get("/mine")
+async def list_my_work_orders(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.FIELD_TECHNICIAN)),
+):
+    statement = (
+        select(
+            WorkOrder.id.label("id"),
+            WorkOrder.title,
+            WorkOrder.priority,
+            WorkOrder.status,
+            Equipment.serial_number,
+            Equipment.model,
+        )
+        .join(Equipment, Equipment.id == WorkOrder.equipment_id)
+        .where(WorkOrder.technician_id == current_user.id)
+        .order_by(WorkOrder.id)
+    )
+    result = await db.execute(statement)
+    return [dict(row) for row in result.mappings().all()]
+
 @router.patch("/{work_order_id}/status")
 async def update_work_order_status(
     work_order_id: int,
     payload: StatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN, UserRole.FIELD_TECHNICIAN))
+    current_user: User = Depends(
+        require_role(UserRole.CLINICAL_ADMIN, UserRole.FIELD_TECHNICIAN)
+    ),
 ):
     work_order = await db.get(WorkOrder, work_order_id)
     if work_order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work Order not found")
+
+    if (
+        current_user.role == UserRole.FIELD_TECHNICIAN
+        and work_order.technician_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Technicians can only update their own work orders",
+        )
         
     if payload.status == WorkOrderStatus.COMPLETED:
         work_order.mark_completed()
@@ -73,28 +105,41 @@ async def update_work_order_status(
     return work_order
 
 @router.get("/reliability")
-async def get_reliability_metrics(db: AsyncSession = Depends(get_db)):
-    wo_result = await db.execute(select(WorkOrder))
-    work_orders = wo_result.scalars().all()
-    
-    eq_result = await db.execute(select(Equipment))
-    equipments = {e.id: e.model for e in eq_result.scalars().all()}
-    
-    metrics = {}
-    for wo in work_orders:
-        model = equipments.get(wo.equipment_id, "Unknown Model")
-        if model not in metrics:
-            metrics[model] = {
-                "model": model, 
-                "total_work_orders": 0, 
-                "completed_count": 0, 
-                "failed_count": 0
+async def get_reliability_metrics(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    completed_count = func.sum(
+        case((WorkOrder.status == WorkOrderStatus.COMPLETED, 1), else_=0)
+    )
+    failed_count = func.sum(
+        case((WorkOrder.status == WorkOrderStatus.FAILED, 1), else_=0)
+    )
+    statement = (
+        select(
+            Equipment.model,
+            func.count(WorkOrder.id).label("total"),
+            completed_count.label("completed_count"),
+            failed_count.label("failed_count"),
+        )
+        .join(WorkOrder, WorkOrder.equipment_id == Equipment.id)
+        .group_by(Equipment.model)
+        .order_by(Equipment.model)
+    )
+    result = await db.execute(statement)
+    metrics = []
+    for row in result.mappings():
+        outcome_count = row["completed_count"] + row["failed_count"]
+        metrics.append(
+            {
+                "model": row["model"],
+                "total": row["total"],
+                "total_work_orders": row["total"],
+                "completed_count": row["completed_count"],
+                "failed_count": row["failed_count"],
+                "completion_ratio": (
+                    row["completed_count"] / outcome_count if outcome_count else None
+                ),
             }
-        
-        metrics[model]["total_work_orders"] += 1
-        if wo.status == WorkOrderStatus.COMPLETED:
-            metrics[model]["completed_count"] += 1
-        elif wo.status == WorkOrderStatus.FAILED:
-            metrics[model]["failed_count"] += 1
-            
-    return list(metrics.values())
+        )
+    return metrics

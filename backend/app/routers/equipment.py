@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Any, Dict
 from pydantic import BaseModel, Field, model_validator
 
-from backend.app.dependencies import get_db, require_role
+from backend.app.dependencies import get_current_user, get_db, require_role
 from backend.app.models.equipment import Equipment
 from backend.app.models.hospital import Hospital
 from backend.app.models.user import User
@@ -109,15 +109,17 @@ async def create_equipment(
 @router.get("/low-charge")
 async def low_charge_alert(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(get_current_user),
 ) -> List[Dict[str, Any]]:
     statement = (
         select(
             Equipment.id,
+            Equipment.serial_number,
             Equipment.model,
             Equipment.charge_level,
-            Equipment.facility_id.label("hospital_id")
+            Hospital.name.label("hospital"),
         )
+        .join(Hospital, Hospital.id == Equipment.facility_id)
         .where(Equipment.is_active == True)
         .where(Equipment.charge_level < 20)
         .order_by(Equipment.charge_level)

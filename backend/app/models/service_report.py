@@ -16,8 +16,8 @@ class ServiceReport(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     work_order_id: Mapped[int] = mapped_column(Integer, ForeignKey("work_orders.id"))
     file_url: Mapped[str] = mapped_column(Text)
-    notes: Mapped[str] = mapped_column(Text)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     
     work_order: Mapped["WorkOrder"] = relationship("WorkOrder")
     
@@ -34,5 +34,5 @@ class ServiceReport(Base):
 | id               |
 | file_url (S3)    |
 | notes            |
-| timestamp        |
+| created_at       |
 +------------------+"""
