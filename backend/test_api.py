@@ -13,6 +13,5 @@ def test_security_blocks_unauthorized_users():
     """Proves the Command Center strictly enforces login requirements"""
     response = client.get("/equipment/")
     
-    # We expect a 401 Unauthorized status because we didn't send a login token
     assert response.status_code == 401
     assert response.json() == {"detail": "Not authenticated"}
