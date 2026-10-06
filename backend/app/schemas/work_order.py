@@ -9,7 +9,12 @@ class WorkOrderBase(BaseModel):
     technician_id: int
 
 class WorkOrderCreate(WorkOrderBase):
-    pass
+    status: WorkOrderStatus = WorkOrderStatus.PENDING
+
+class WorkOrderUpdate(BaseModel):
+    title: str | None = None
+    priority: WorkOrderPriority | None = None
+    technician_id: int | None = None
 
 class WorkOrderResponse(WorkOrderBase):
     id: int

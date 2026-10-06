@@ -52,21 +52,24 @@ const columns = [
     { field: 'hospital_id', headerName: 'Hospital ID', width: 110, type: 'number' },
 ];
 
-const STATUS_OPTIONS = ['ACTIVE', 'MAINTENANCE', 'RETIRED'];
+const CREATE_STATUS_OPTIONS = ['ACTIVE', 'MAINTENANCE', 'RETIRED'];
+const EDIT_STATUS_OPTIONS = ['AVAILABLE', 'IN_USE', 'UNDER_MAINTENANCE', 'OFFLINE'];
+const EMPTY_FORM = {
+    serial_number: '',
+    model: '',
+    charge_level: '',
+    hospital_id: '',
+    status: 'ACTIVE',
+};
 
-function EquipmentDataGrid({ onSuccess, canCreate = true }) {
+function EquipmentDataGrid({ onSuccess, canManage = false }) {
     const [equipmentList, setEquipmentList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [dialogError, setDialogError] = useState(null);
-    const [formValues, setFormValues] = useState({
-        serial_number: '',
-        model: '',
-        charge_level: '',
-        hospital_id: '',
-        status: 'ACTIVE',
-    });
+    const [formValues, setFormValues] = useState(EMPTY_FORM);
+    const [editingEquipment, setEditingEquipment] = useState(null);
 
     async function fetchEquipment() {
         setLoading(true);
@@ -82,7 +85,7 @@ function EquipmentDataGrid({ onSuccess, canCreate = true }) {
     }
 
     useEffect(() => {
-        fetchEquipment();
+        void fetchEquipment();
     }, []);
 
     const handleFieldChange = (field) => (event) => {
@@ -93,34 +96,100 @@ function EquipmentDataGrid({ onSuccess, canCreate = true }) {
     const handleCreate = async () => {
         setDialogError(null);
         try {
-            await apiClient.post('/equipment/', {
-                ...formValues,
+            const payload = {
+                model: formValues.model,
+                status: editingEquipment
+                    ? formValues.status.toLowerCase()
+                    : formValues.status,
                 charge_level: Number(formValues.charge_level),
-                hospital_id: Number(formValues.hospital_id),
-            });
+                facility_id: Number(formValues.hospital_id),
+            };
+            if (editingEquipment) {
+                await apiClient.patch(`/equipment/${editingEquipment.id}`, payload);
+            } else {
+                await apiClient.post('/equipment/', {
+                    ...payload,
+                    serial_number: formValues.serial_number,
+                    hospital_id: payload.facility_id,
+                });
+            }
             setDialogOpen(false);
-            setFormValues({ serial_number: '', model: '', charge_level: '', hospital_id: '', status: 'ACTIVE' });
-            if (onSuccess) onSuccess(`Equipment ${formValues.serial_number} created.`);
+            setFormValues(EMPTY_FORM);
+            if (onSuccess) {
+                onSuccess(
+                    editingEquipment
+                        ? `Equipment ${editingEquipment.serial_number} updated.`
+                        : `Equipment ${formValues.serial_number} created.`
+                );
+            }
+            setEditingEquipment(null);
             await fetchEquipment();
         } catch (err) {
-            setDialogError(err.response?.data?.detail || 'Could not create equipment.');
+            setDialogError(err.response?.data?.detail || 'Could not save equipment.');
         }
     };
+
+    const handleEdit = (equipment) => {
+        setEditingEquipment(equipment);
+        setDialogError(null);
+        setFormValues({
+            serial_number: equipment.serial_number,
+            model: equipment.model,
+            charge_level: equipment.charge_level,
+            hospital_id: equipment.hospital_id,
+            status: String(equipment.status).toUpperCase(),
+        });
+        setDialogOpen(true);
+    };
+
+    const handleDelete = async (equipment) => {
+        if (!window.confirm(`Delete equipment ${equipment.serial_number}?`)) return;
+        try {
+            await apiClient.delete(`/equipment/${equipment.id}`);
+            if (onSuccess) onSuccess(`Equipment ${equipment.serial_number} deleted.`);
+            await fetchEquipment();
+        } catch (err) {
+            setError(err.response?.data?.detail || 'Could not delete equipment.');
+        }
+    };
+
+    const gridColumns = canManage
+        ? [
+            ...columns,
+            {
+                field: 'actions',
+                headerName: 'Actions',
+                width: 170,
+                sortable: false,
+                filterable: false,
+                renderCell: (params) => (
+                    <Stack direction="row" spacing={1}>
+                        <Button size="small" onClick={() => handleEdit(params.row)}>Edit</Button>
+                        <Button size="small" color="error" onClick={() => handleDelete(params.row)}>
+                            Delete
+                        </Button>
+                    </Stack>
+                ),
+            },
+        ]
+        : columns;
 
     if (loading) return <CircularProgress />;
     if (error) return <Alert severity="error">{error}</Alert>;
 
     return (
         <Box>
-            {canCreate && <Button variant="contained" color="primary" sx={{ mb: 3 }} onClick={() => {
+            {canManage && <Button variant="contained" color="primary" sx={{ mb: 3 }} onClick={() => {
                 setDialogError(null);
+                setEditingEquipment(null);
+                setFormValues(EMPTY_FORM);
                 setDialogOpen(true);
             }}>+ Add Equipment</Button>}
             
             <Box sx={{ height: 400, width: '100%' }}>
                 <DataGrid 
                     rows={equipmentList} 
-                    columns={columns} 
+                    columns={gridColumns}
                     getRowId={(row) => row.id} 
                     showToolbar
                     initialState={{
@@ -148,25 +217,30 @@ function EquipmentDataGrid({ onSuccess, canCreate = true }) {
                 />
             </Box>
 
-            <Dialog open={canCreate && dialogOpen} onClose={() => setDialogOpen(false)}>
-                <DialogTitle>Add New Equipment</DialogTitle>
+            <Dialog open={canManage && dialogOpen} onClose={() => setDialogOpen(false)}>
+                <DialogTitle>{editingEquipment ? 'Edit Equipment' : 'Add New Equipment'}</DialogTitle>
                 <DialogContent>
                     <Stack spacing={2} sx={{ mt: 1, minWidth: 300 }}>
                         {dialogError && <Alert severity="error">{dialogError}</Alert>}
-                        <TextField label="Serial Number" value={formValues.serial_number} onChange={handleFieldChange('serial_number')} />
+                        {!editingEquipment && <TextField label="Serial Number" value={formValues.serial_number} onChange={handleFieldChange('serial_number')} />}
                         <TextField label="Model" value={formValues.model} onChange={handleFieldChange('model')} />
                         <TextField label="Charge Level" type="number" value={formValues.charge_level} onChange={handleFieldChange('charge_level')} />
                         <TextField label="Hospital ID" type="number" value={formValues.hospital_id} onChange={handleFieldChange('hospital_id')} />
                         <TextField select label="Status" value={formValues.status} onChange={handleFieldChange('status')}>
-                            {STATUS_OPTIONS.map((option) => (
-                                <MenuItem key={option} value={option}>{option}</MenuItem>
+                            {(editingEquipment ? EDIT_STATUS_OPTIONS : CREATE_STATUS_OPTIONS).map((option) => (
+                                <MenuItem key={option} value={option}>{option.replaceAll('_', ' ')}</MenuItem>
                             ))}
                         </TextField>
                     </Stack>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-                    <Button variant="contained" onClick={handleCreate}>Create</Button>
+                    <Button onClick={() => {
+                        setDialogOpen(false);
+                        setEditingEquipment(null);
+                    }}>Cancel</Button>
+                    <Button variant="contained" onClick={handleCreate}>
+                        {editingEquipment ? 'Save' : 'Create'}
+                    </Button>
                 </DialogActions>
             </Dialog>
         </Box>

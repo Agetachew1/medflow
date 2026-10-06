@@ -9,6 +9,12 @@ class HospitalBase(BaseModel):
 class HospitalCreate(HospitalBase):
     pass
 
+class HospitalUpdate(BaseModel):
+    name: str | None = None
+    location_region: str | None = None
+    capacity: int | None = None
+    supervisor_id: int | None = None
+
 class HospitalResponse(HospitalBase):
     id: int
     

@@ -134,7 +134,7 @@ function Dashboard() {
           Equipment Overview
         </Typography>
         <Box sx={{ mb: 4 }}>
-          <EquipmentDataGrid onSuccess={setNotification} canCreate={isAdmin} />
+          <EquipmentDataGrid onSuccess={setNotification} canManage={isAdmin} />
         </Box>
 
         {isAdmin && (

@@ -1,33 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Any, Dict
-from pydantic import BaseModel, Field, model_validator
 
 from backend.app.dependencies import get_current_user, get_db, require_role
 from backend.app.models.equipment import Equipment
 from backend.app.models.hospital import Hospital
 from backend.app.models.user import User
 from backend.app.models.enums import UserRole, EquipmentStatus
+from backend.app.schemas.equipment import EquipmentCreate, EquipmentResponse, EquipmentUpdate
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
-
-class EquipmentCreate(BaseModel):
-    serial_number: str
-    model: str
-    charge_level: int
-    status: str = EquipmentStatus.AVAILABLE.value
-    facility_id: int | None = None
-    hospital_id: int | None = Field(default=None, exclude=True)
-
-    @model_validator(mode="after")
-    def map_hospital_id_to_facility_id(self):
-        if self.facility_id is None:
-            self.facility_id = self.hospital_id
-        if self.facility_id is None:
-            raise ValueError("facility_id or hospital_id is required")
-        return self
+EQUIPMENT_NOT_FOUND = "Equipment not found"
 
 @router.get("/")
 async def get_all_equipment(
@@ -42,11 +27,13 @@ async def get_all_equipment(
             Equipment.charge_level,
             Equipment.status,
             Equipment.facility_id.label("hospital_id"),
-        ).order_by(Equipment.id)
+        )
+        .where(Equipment.is_active.is_(True))
+        .order_by(Equipment.id)
     )
     return [dict(row) for row in result.mappings().all()]
 
-@router.post("/")
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_equipment(
     payload: EquipmentCreate,
     db: AsyncSession = Depends(get_db),
@@ -127,3 +114,55 @@ async def low_charge_alert(
     
     result = await db.execute(statement)
     return [dict(row) for row in result.mappings().all()]
+
+@router.get("/{equipment_id}", response_model=EquipmentResponse)
+async def get_equipment(
+    equipment_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+):
+    equipment = await db.get(Equipment, equipment_id)
+    if equipment is None or not equipment.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=EQUIPMENT_NOT_FOUND)
+    return equipment
+
+@router.patch("/{equipment_id}", response_model=EquipmentResponse)
+async def update_equipment(
+    equipment_id: int,
+    payload: EquipmentUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+):
+    equipment = await db.get(Equipment, equipment_id)
+    if equipment is None or not equipment.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=EQUIPMENT_NOT_FOUND)
+
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    facility_id = changes.get("facility_id")
+    if facility_id is not None:
+        hospital_exists = await db.scalar(
+            select(Hospital.id).where(Hospital.id == facility_id)
+        )
+        if hospital_exists is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hospital not found")
+
+    for field, value in changes.items():
+        setattr(equipment, field, value)
+
+    await db.commit()
+    await db.refresh(equipment)
+    return equipment
+
+@router.delete("/{equipment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_equipment(
+    equipment_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+):
+    equipment = await db.get(Equipment, equipment_id)
+    if equipment is None or not equipment.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=EQUIPMENT_NOT_FOUND)
+
+    equipment.is_active = False
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

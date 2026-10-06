@@ -1,11 +1,11 @@
-from .hospital import HospitalBase, HospitalCreate, HospitalResponse
-from .equipment import EquipmentBase, EquipmentCreate, EquipmentResponse
-from .work_order import WorkOrderBase, WorkOrderCreate, WorkOrderResponse
-from .user import UserBase, UserCreate, UserResponse
+from .hospital import HospitalBase, HospitalCreate, HospitalResponse, HospitalUpdate
+from .equipment import EquipmentBase, EquipmentCreate, EquipmentResponse, EquipmentUpdate
+from .work_order import WorkOrderBase, WorkOrderCreate, WorkOrderResponse, WorkOrderUpdate
+from .user import AdminUserCreate, UserBase, UserCreate, UserResponse, UserUpdate
 
 __all__ = [
-    "HospitalBase", "HospitalCreate", "HospitalResponse",
-    "EquipmentBase", "EquipmentCreate", "EquipmentResponse",
-    "WorkOrderBase", "WorkOrderCreate", "WorkOrderResponse",
-    "UserBase", "UserCreate", "UserResponse"
+    "HospitalBase", "HospitalCreate", "HospitalResponse", "HospitalUpdate",
+    "EquipmentBase", "EquipmentCreate", "EquipmentResponse", "EquipmentUpdate",
+    "WorkOrderBase", "WorkOrderCreate", "WorkOrderResponse", "WorkOrderUpdate",
+    "AdminUserCreate", "UserBase", "UserCreate", "UserResponse", "UserUpdate"
 ]

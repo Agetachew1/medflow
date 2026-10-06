@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,8 +8,10 @@ from backend.app.models.equipment import Equipment
 from backend.app.models.user import User
 from backend.app.models.work_order import WorkOrder
 from backend.app.models.enums import EquipmentStatus, UserRole, WorkOrderStatus
+from backend.app.schemas.hospital import HospitalCreate, HospitalResponse, HospitalUpdate
 
 router = APIRouter(prefix="/hospitals", tags=["hospitals"])
+HOSPITAL_NOT_FOUND = "Hospital not found"
 
 @router.get("/maintenance-flags")
 async def get_maintenance_flags(
@@ -68,3 +70,88 @@ async def get_reporting_lines(
         "supervisor_id": supervisor_id,
         "technicians_with_active_work_orders": count
     }
+
+@router.get("/", response_model=list[HospitalResponse])
+async def list_hospitals(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Hospital).order_by(Hospital.id))
+    return result.scalars().all()
+
+@router.get("/{hospital_id}", response_model=HospitalResponse)
+async def get_hospital(
+    hospital_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+):
+    hospital = await db.get(Hospital, hospital_id)
+    if hospital is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=HOSPITAL_NOT_FOUND)
+    return hospital
+
+@router.post(
+    "/",
+    response_model=HospitalResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_hospital(
+    payload: HospitalCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+):
+    hospital = Hospital(**payload.model_dump())
+    db.add(hospital)
+    await db.commit()
+    await db.refresh(hospital)
+    return hospital
+
+@router.patch("/{hospital_id}", response_model=HospitalResponse)
+async def update_hospital(
+    hospital_id: int,
+    payload: HospitalUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+):
+    hospital = await db.get(Hospital, hospital_id)
+    if hospital is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=HOSPITAL_NOT_FOUND)
+
+    for field, value in payload.model_dump(exclude_unset=True, exclude_none=True).items():
+        setattr(hospital, field, value)
+
+    await db.commit()
+    await db.refresh(hospital)
+    return hospital
+
+@router.delete("/{hospital_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_hospital(
+    hospital_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+):
+    hospital = await db.get(Hospital, hospital_id)
+    if hospital is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=HOSPITAL_NOT_FOUND)
+
+    equipment_id = await db.scalar(
+        select(Equipment.id).where(Equipment.facility_id == hospital_id).limit(1)
+    )
+    if equipment_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Hospital cannot be deleted while it has equipment",
+        )
+
+    assigned_user_id = await db.scalar(
+        select(User.id).where(User.hospital_id == hospital_id).limit(1)
+    )
+    if assigned_user_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Hospital cannot be deleted while users are assigned to it",
+        )
+
+    await db.delete(hospital)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
