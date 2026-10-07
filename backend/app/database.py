@@ -4,16 +4,21 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
 )
-from backend.app.config import settings
+from .config import settings
 from backend.app.models.base import Base
+from sqlalchemy.pool import NullPool
 
-# 1. Define the connection URL
-DATABASE_URL = settings.database_url
+
+# Base engine kwargs
+engine_kwargs = {"echo": settings.db_echo}
+
+# Lambda freezes between calls, so pooled connections go stale. Disable pooling if on Lambda.
+if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    engine_kwargs["poolclass"] = NullPool
 
 # 2. Create the async engine
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(settings.database_url, **engine_kwargs)
 
 # 3. Create a session Factory
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine, class_ =AsyncSession, expire_on_commit=False
-)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+

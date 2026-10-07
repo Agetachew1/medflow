@@ -3,9 +3,9 @@ from fastapi.concurrency import asynccontextmanager
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError
-# Inside backend/app/routers/__init__.py
+from .config import settings
+from mangum import Mangum
 
-# Add the database imports so Python knows what engine and Base are
 from backend.app.database import engine
 from backend.app.models.base import Base
 
@@ -30,10 +30,13 @@ async def lifespan(app: FastAPI):
 # Attach the lifespan to the FastAPI app
 app = FastAPI(title="MedFlow Command Center", version="1.0", lifespan=lifespan)
 
+#Origin 
+origins = [origin.strip() for origin in settings.frontend_origin.split(",")]
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -77,3 +80,5 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         status_code=500,
         content={"detail": "An unexpected error has occurred."},
     )
+
+handler = Mangum(app, lifespan="off")
