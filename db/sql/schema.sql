@@ -40,7 +40,6 @@ BEGIN
     CREATE TYPE user_role AS ENUM (
         'clinical_admin',
         'field_technician',
-        'hospital_manager',
         'auditor'
     );
 EXCEPTION
@@ -158,6 +157,8 @@ CREATE INDEX IF NOT EXISTS ix_work_orders_title ON work_orders (title);
 CREATE INDEX IF NOT EXISTS ix_work_orders_status ON work_orders (status);
 CREATE INDEX IF NOT EXISTS ix_work_orders_equipment_id ON work_orders (equipment_id);
 CREATE INDEX IF NOT EXISTS ix_work_orders_is_active ON work_orders (is_active);
+CREATE INDEX IF NOT EXISTS ix_service_reports_work_order_id
+    ON service_reports (work_order_id);
 
 CREATE INDEX IF NOT EXISTS ix_refresh_tokens_chain_id ON refresh_tokens (chain_id);
 CREATE INDEX IF NOT EXISTS ix_refresh_tokens_user_id ON refresh_tokens (user_id);

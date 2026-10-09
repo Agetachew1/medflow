@@ -39,12 +39,16 @@ on every exchange; a reused token revokes the whole token chain. Logging out
 revokes the presented refresh token.
 Refresh token hashes, expiry, revocation, and chain identifiers are stored in
 the `refresh_tokens` table. The application does not create or alter tables at
-startup. Apply
-[`backend/migrations/001_create_refresh_tokens.sql`](./backend/migrations/001_create_refresh_tokens.sql)
+startup. For an existing PostgreSQL database, apply
+[`backend/migrations/001_create_refresh_tokens.sql`](./backend/migrations/001_create_refresh_tokens.sql),
+[`backend/migrations/002_soft_deletes_audit_trail.sql`](./backend/migrations/002_soft_deletes_audit_trail.sql),
+[`backend/migrations/003_index_service_reports.sql`](./backend/migrations/003_index_service_reports.sql),
 and
-[`backend/migrations/002_soft_deletes_audit_trail.sql`](./backend/migrations/002_soft_deletes_audit_trail.sql)
-to an existing PostgreSQL database before deploying these changes, or run the
-idempotent [`db/sql/schema.sql`](./db/sql/schema.sql) against the database.
+[`backend/migrations/004_remove_hospital_manager_role.sql`](./backend/migrations/004_remove_hospital_manager_role.sql)
+before deploying these changes. For a fresh database, run the idempotent
+[`db/sql/schema.sql`](./db/sql/schema.sql).
+Migration 004 converts existing `hospital_manager` users to the read-only
+`auditor` role before removing that role from the PostgreSQL enum.
 
 ## Soft deletes and audit history
 
@@ -59,6 +63,40 @@ snapshot. Audit rows have no mutation API.
 The schema SQL also adds the read-only `auditor` role, which can inspect active
 asset and job records and their history, but cannot mutate records or view the
 admin-only inactive lists.
+
+## Service report uploads
+
+`POST /service-reports/upload` accepts a multipart form with `work_order_id`, `file`,
+and optional `notes`. Users need the `report:upload` permission. The work order
+must be active and assigned to the uploading technician unless the caller is a
+clinical admin. S3 must be configured with `S3_BUCKET`. The file is stored
+under a unique key in the `service-reports/work-orders/` prefix using configured
+AWS credentials (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`) or the SDK's
+standard profile/IAM credential providers. The database
+stores an `s3://` reference and report metadata; no public object ACL is
+set. Uploads default to a 10 MiB limit, configurable with
+`MAX_SERVICE_REPORT_UPLOAD_BYTES`.
+
+The object is uploaded before its database row is committed. If the database
+write fails, the API attempts to remove the uploaded object to avoid leaving an
+orphan. Apply
+[`backend/migrations/003_index_service_reports.sql`](./backend/migrations/003_index_service_reports.sql)
+to an existing database, or run `db/sql/schema.sql` on a fresh database. Reports
+can be listed with `GET /service-reports`; the endpoint supports `work_order_id`,
+`limit` (maximum 100), and `offset` filters and requires `report:read`.
+Field technicians can upload reports from the **Upload report** action on an
+assigned work order in the dashboard. The upload dialog accepts image, PDF, and
+text files and optionally records notes.
+
+Example local upload:
+
+```bash
+curl -X POST http://localhost:8000/service-reports/upload \
+  -H "Authorization: Bearer <access-token>" \
+  -F "work_order_id=1" \
+  -F "file=@sample_service_report.txt" \
+  -F "notes=Calibration output"
+```
 
 ```mermaid
 erDiagram

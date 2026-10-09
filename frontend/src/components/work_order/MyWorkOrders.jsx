@@ -3,6 +3,7 @@ import { Alert, Box, Button, CircularProgress, MenuItem, Select } from '@mui/mat
 import { DataGrid } from '@mui/x-data-grid';
 import apiClient from '../../api/client.js';
 import AuditHistoryDialog from '../audit/AuditHistoryDialog.jsx';
+import ServiceReportUploadDialog from '../service_reports/ServiceReportUploadDialog.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 
 const STATUS_OPTIONS = ['pending', 'in_progress', 'completed', 'failed'];
@@ -14,6 +15,8 @@ function MyWorkOrders() {
     const [error, setError] = useState(null);
     const [savingId, setSavingId] = useState(null);
     const [historyWorkOrderId, setHistoryWorkOrderId] = useState(null);
+    const [uploadWorkOrderId, setUploadWorkOrderId] = useState(null);
+    const canUploadReports = hasPermission('report:upload');
 
     useEffect(() => {
         async function fetchWorkOrders() {
@@ -75,6 +78,22 @@ function MyWorkOrders() {
                 </Select>
             ),
         },
+        ...(canUploadReports ? [{
+            field: 'service_report',
+            headerName: 'Service Report',
+            width: 160,
+            sortable: false,
+            filterable: false,
+            renderCell: (params) => (
+                <Button
+                    size="small"
+                    onClick={() => setUploadWorkOrderId(params.row.id)}
+                    aria-label={`Upload service report for work order ${params.row.id}`}
+                >
+                    Upload report
+                </Button>
+            ),
+        }] : []),
         ...(hasPermission('audit:read') ? [{
             field: 'history',
             headerName: 'History',
@@ -113,6 +132,13 @@ function MyWorkOrders() {
                     recordType="job"
                     recordId={historyWorkOrderId}
                     onClose={() => setHistoryWorkOrderId(null)}
+                />
+            )}
+            {uploadWorkOrderId !== null && (
+                <ServiceReportUploadDialog
+                    open
+                    workOrderId={uploadWorkOrderId}
+                    onClose={() => setUploadWorkOrderId(null)}
                 />
             )}
         </Box>

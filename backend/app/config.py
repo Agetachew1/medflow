@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173,http://localhost:5174"
     db_echo: bool = False
     s3_bucket: str | None = None
+    max_service_report_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
 
     @model_validator(mode="after")
     def validate_token_lifetimes(self) -> "Settings":

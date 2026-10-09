@@ -33,7 +33,6 @@ export default function CreateUserModal({ open, onClose }) {
                     <InputLabel>Role</InputLabel>
                     <Select value={role} label="Role" onChange={e => setRole(e.target.value)}>
                         <MenuItem value="clinical_admin">Clinical Admin</MenuItem>
-                        <MenuItem value="hospital_manager">Hospital Manager</MenuItem>
                         <MenuItem value="field_technician">Field Technician</MenuItem>
                         <MenuItem value="auditor">Auditor</MenuItem>
                     </Select>

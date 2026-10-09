@@ -16,12 +16,14 @@ from backend.app.permissions import Permission, ROLE_PERMISSIONS
 from backend.app.models.refresh_token import RefreshToken
 from backend.app.models.equipment import Equipment
 from backend.app.models.work_order import WorkOrder
+from backend.app.models.service_report import ServiceReport
 from backend.app.routers.auth import (
     _token_hash,
     logout,
     refresh_access_token,
 )
 from backend.app.routers.audit import router as audit_router
+from backend.app.routers import service_reports
 from backend.app.schemas.user import RefreshTokenRequest
 from backend.app.security import (
     create_refresh_token,
@@ -159,6 +161,35 @@ class FakeWriteSession:
         return record
 
 
+class FakeServiceReportSession:
+    def __init__(self, work_order=None, fail_commit=False):
+        self.work_order = work_order
+        self.fail_commit = fail_commit
+        self.added = []
+        self.commit_count = 0
+        self.rollback_count = 0
+
+    async def get(self, model, record_id):
+        if model is WorkOrder and self.work_order and self.work_order.id == record_id:
+            return self.work_order
+        return None
+
+    def add(self, value):
+        self.added.append(value)
+
+    async def commit(self):
+        self.commit_count += 1
+        if self.fail_commit:
+            raise OperationalError("INSERT", {}, RuntimeError("database unavailable"))
+
+    async def rollback(self):
+        self.rollback_count += 1
+
+    async def refresh(self, record):
+        record.id = 101
+        record.created_at = datetime.now(timezone.utc)
+
+
 def override_db(session):
     async def get_fake_db():
         yield session
@@ -180,16 +211,6 @@ EXPECTED_ROLE_PERMISSIONS = {
             Permission.JOB_CHANGE_STATUS,
             Permission.REPORT_READ,
             Permission.REPORT_UPLOAD,
-            Permission.ANALYTICS_READ,
-            Permission.HOSPITAL_READ,
-            Permission.AUDIT_READ,
-        }
-    ),
-    UserRole.HOSPITAL_MANAGER: frozenset(
-        {
-            Permission.IDENTITY_READ,
-            Permission.ASSET_READ,
-            Permission.REPORT_READ,
             Permission.ANALYTICS_READ,
             Permission.HOSPITAL_READ,
             Permission.AUDIT_READ,
@@ -254,10 +275,10 @@ def test_identity_endpoint_returns_current_role_permissions():
 
 
 def test_roles_endpoint_is_admin_only_and_lists_role_permissions():
-    async def get_manager():
-        return SimpleNamespace(role=UserRole.HOSPITAL_MANAGER)
+    async def get_auditor():
+        return SimpleNamespace(role=UserRole.AUDITOR)
 
-    app.dependency_overrides[get_current_user] = get_manager
+    app.dependency_overrides[get_current_user] = get_auditor
     try:
         forbidden = client.get("/roles")
     finally:
@@ -301,7 +322,7 @@ def test_all_existing_roles_can_read_equipment(role):
     [
         (UserRole.CLINICAL_ADMIN, status.HTTP_403_FORBIDDEN),
         (UserRole.FIELD_TECHNICIAN, status.HTTP_200_OK),
-        (UserRole.HOSPITAL_MANAGER, status.HTTP_403_FORBIDDEN),
+        (UserRole.AUDITOR, status.HTTP_403_FORBIDDEN),
     ],
 )
 def test_assigned_work_order_endpoint_preserves_existing_access(role, expected_status):
@@ -319,10 +340,10 @@ def test_assigned_work_order_endpoint_preserves_existing_access(role, expected_s
 
 
 def test_user_management_requires_users_manage_permission():
-    async def get_manager():
-        return SimpleNamespace(id=1, role=UserRole.HOSPITAL_MANAGER)
+    async def get_auditor():
+        return SimpleNamespace(id=1, role=UserRole.AUDITOR)
 
-    app.dependency_overrides[get_current_user] = get_manager
+    app.dependency_overrides[get_current_user] = get_auditor
     try:
         response = client.get("/users")
     finally:
@@ -651,10 +672,10 @@ def test_inactive_work_order_restore_is_audited():
 
 
 def test_non_admin_cannot_list_or_restore_inactive_records():
-    async def get_manager():
-        return SimpleNamespace(id=2, role=UserRole.HOSPITAL_MANAGER)
+    async def get_auditor():
+        return SimpleNamespace(id=2, role=UserRole.AUDITOR)
 
-    app.dependency_overrides[get_current_user] = get_manager
+    app.dependency_overrides[get_current_user] = get_auditor
     try:
         list_response = client.get("/equipment/inactive")
         restore_response = client.post("/equipment/8/restore")
@@ -682,13 +703,13 @@ def test_audit_history_is_chronological_and_record_scoped():
         )
     ]
     equipment = SimpleNamespace(id=8, is_active=True)
-    user = SimpleNamespace(id=2, role=UserRole.HOSPITAL_MANAGER)
+    user = SimpleNamespace(id=2, role=UserRole.AUDITOR)
     db = FakeWriteSession(objects={(Equipment, 8): equipment}, rows=entries)
 
-    async def get_manager():
+    async def get_auditor():
         return user
 
-    app.dependency_overrides[get_current_user] = get_manager
+    app.dependency_overrides[get_current_user] = get_auditor
     override_db(db)
     try:
         response = client.get("/audit/asset/8")
@@ -910,6 +931,188 @@ def test_audit_routes_have_no_mutation_methods():
     assert all(route.methods == {"GET"} for route in audit_routes)
 
 
+def test_service_report_upload_saves_object_and_database_record(monkeypatch):
+    work_order = SimpleNamespace(id=5, is_active=True)
+    db = FakeServiceReportSession(work_order=work_order)
+    uploaded = {}
+
+    class FakeS3Client:
+        def upload_fileobj(self, file_obj, bucket, key, ExtraArgs):
+            uploaded.update(
+                bucket=bucket,
+                key=key,
+                content=file_obj.read(),
+                extra_args=ExtraArgs,
+            )
+
+    monkeypatch.setattr(service_reports.settings, "s3_bucket", "medflow-test-bucket")
+    monkeypatch.setattr(
+        service_reports,
+        "_s3_client",
+        lambda: FakeS3Client(),
+    )
+    override_admin()
+    override_db(db)
+    try:
+        response = client.post(
+            "/service-reports/upload",
+            data={"work_order_id": "5", "notes": "Calibration output"},
+            files={"file": ("report.txt", b"diagnostic data", "text/plain")},
+        )
+    finally:
+        clear_dependency_overrides()
+
+    assert response.status_code == status.HTTP_201_CREATED
+    body = response.json()
+    assert body["work_order_id"] == 5
+    assert body["notes"] == "Calibration output"
+    assert body["file_url"] == f"s3://{uploaded['bucket']}/{uploaded['key']}"
+    assert uploaded["key"].startswith("service-reports/work-orders/5/")
+    assert uploaded["key"].endswith(".txt")
+    assert uploaded["content"] == b"diagnostic data"
+    assert uploaded["extra_args"]["ContentType"] == "text/plain"
+    assert isinstance(db.added[0], ServiceReport)
+    assert db.commit_count == 1
+
+
+def test_service_report_upload_rejects_inactive_work_order(monkeypatch):
+    db = FakeServiceReportSession(work_order=SimpleNamespace(id=5, is_active=False))
+    upload_called = False
+
+    def unexpected_s3_client():
+        nonlocal upload_called
+        upload_called = True
+        raise AssertionError("S3 must not be called for an inactive work order")
+
+    monkeypatch.setattr(service_reports.settings, "s3_bucket", "medflow-test-bucket")
+    monkeypatch.setattr(service_reports, "_s3_client", unexpected_s3_client)
+    override_admin()
+    override_db(db)
+    try:
+        response = client.post(
+            "/service-reports/upload",
+            data={"work_order_id": "5"},
+            files={"file": ("report.txt", b"diagnostic data", "text/plain")},
+        )
+    finally:
+        clear_dependency_overrides()
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert upload_called is False
+    assert db.added == []
+
+
+def test_service_report_upload_rejects_work_order_owned_by_another_technician(monkeypatch):
+    db = FakeServiceReportSession(
+        work_order=SimpleNamespace(id=5, is_active=True, technician_id=22)
+    )
+    user = SimpleNamespace(id=33, role=UserRole.FIELD_TECHNICIAN)
+
+    async def get_technician():
+        return user
+
+    monkeypatch.setattr(service_reports.settings, "s3_bucket", "medflow-test-bucket")
+    monkeypatch.setattr(
+        service_reports,
+        "_s3_client",
+        lambda: pytest.fail("S3 must not be called for another technician's work order"),
+    )
+    app.dependency_overrides[get_current_user] = get_technician
+    override_db(db)
+    try:
+        response = client.post(
+            "/service-reports/upload",
+            data={"work_order_id": "5"},
+            files={"file": ("report.txt", b"diagnostic data", "text/plain")},
+        )
+    finally:
+        clear_dependency_overrides()
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert db.added == []
+
+
+def test_service_report_upload_enforces_configured_size_limit(monkeypatch):
+    db = FakeServiceReportSession(work_order=SimpleNamespace(id=5, is_active=True))
+    monkeypatch.setattr(service_reports.settings, "s3_bucket", "medflow-test-bucket")
+    monkeypatch.setattr(service_reports.settings, "max_service_report_upload_bytes", 4)
+    monkeypatch.setattr(
+        service_reports,
+        "_s3_client",
+        lambda: pytest.fail("S3 must not be called for an oversized file"),
+    )
+    override_admin()
+    override_db(db)
+    try:
+        response = client.post(
+            "/service-reports/upload",
+            data={"work_order_id": "5"},
+            files={"file": ("report.txt", b"12345", "text/plain")},
+        )
+    finally:
+        clear_dependency_overrides()
+
+    assert response.status_code == status.HTTP_413_CONTENT_TOO_LARGE
+    assert db.added == []
+
+
+def test_service_report_upload_removes_s3_object_if_database_commit_fails(monkeypatch):
+    db = FakeServiceReportSession(
+        work_order=SimpleNamespace(id=5, is_active=True),
+        fail_commit=True,
+    )
+    uploaded = {}
+    deleted = {}
+
+    class FakeS3Client:
+        def upload_fileobj(self, file_obj, bucket, key, ExtraArgs):
+            uploaded.update(bucket=bucket, key=key)
+            file_obj.read()
+
+        def delete_object(self, Bucket, Key):
+            deleted.update(bucket=Bucket, key=Key)
+
+    monkeypatch.setattr(service_reports.settings, "s3_bucket", "medflow-test-bucket")
+    monkeypatch.setattr(
+        service_reports,
+        "_s3_client",
+        lambda: FakeS3Client(),
+    )
+    override_admin()
+    override_db(db)
+    try:
+        response = client.post(
+            "/service-reports/upload",
+            data={"work_order_id": "5"},
+            files={"file": ("report.txt", b"diagnostic data", "text/plain")},
+        )
+    finally:
+        clear_dependency_overrides()
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert uploaded == deleted
+    assert db.rollback_count == 2
+    assert db.added
+
+
+def test_service_report_upload_requires_configured_s3_bucket(monkeypatch):
+    db = FakeServiceReportSession(work_order=SimpleNamespace(id=5, is_active=True))
+    monkeypatch.setattr(service_reports.settings, "s3_bucket", None)
+    override_admin()
+    override_db(db)
+    try:
+        response = client.post(
+            "/service-reports/upload",
+            data={"work_order_id": "5"},
+            files={"file": ("report.txt", b"diagnostic data", "text/plain")},
+        )
+    finally:
+        clear_dependency_overrides()
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert db.added == []
+
+
 def compiled_sql(statement):
     return str(
         statement.compile(
@@ -1005,10 +1208,10 @@ def test_health_detail_requires_admin():
 
 
 def test_health_detail_forbids_non_admin():
-    async def get_manager():
-        return SimpleNamespace(role=UserRole.HOSPITAL_MANAGER)
+    async def get_auditor():
+        return SimpleNamespace(role=UserRole.AUDITOR)
 
-    app.dependency_overrides[get_current_user] = get_manager
+    app.dependency_overrides[get_current_user] = get_auditor
     try:
         response = client.get("/health/detail")
     finally:

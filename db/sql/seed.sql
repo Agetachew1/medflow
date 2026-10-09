@@ -33,7 +33,6 @@ SELECT seed.username,
 FROM (
     VALUES
         ('admin_abe', 'clinical_admin', 'Mercy General'),
-        ('manager_sarah', 'hospital_manager', 'St. Jude''s'),
         ('tech_john', 'field_technician', 'Mercy General'),
         ('tech_mike', 'field_technician', 'St. Jude''s')
 ) AS seed(username, role, hospital_name)
