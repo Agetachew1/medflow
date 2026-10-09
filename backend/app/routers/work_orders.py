@@ -147,7 +147,7 @@ async def get_reliability_metrics(
         )
     return metrics
 
-@router.get("/", response_model=List[WorkOrderResponse])
+@router.get("", response_model=List[WorkOrderResponse])
 async def list_work_orders(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
@@ -156,7 +156,7 @@ async def list_work_orders(
     return result.scalars().all()
 
 @router.post(
-    "/",
+    "",
     response_model=WorkOrderResponse,
     status_code=status.HTTP_201_CREATED,
 )

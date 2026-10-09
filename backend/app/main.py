@@ -42,6 +42,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class StripTrailingSlashMiddleware:
+    """Lambda Function URLs strip trailing slashes; normalize every request the same way so routes match without redirects."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope["path"]
+            if len(path) > 1 and path.endswith("/"):
+                scope = dict(scope, path=path.rstrip("/"))
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(StripTrailingSlashMiddleware)
+
 # Attach the routers
 app.include_router(auth_router)
 app.include_router(equipment_router)
@@ -50,20 +66,6 @@ app.include_router(hospital_router)
 app.include_router(service_report_router)
 app.include_router(users_router) # Activate the admin user creation endpoint
 
-from fastapi.routing import APIRoute
-
-# Lambda Function URLs strip trailing slashes, so register a slash-less twin of every "/x/" route.
-for route in list(app.routes):
-    if isinstance(route, APIRoute) and route.path.endswith("/") and route.path != "/":
-        app.add_api_route(
-            route.path.rstrip("/"),
-            route.endpoint,
-            methods=list(route.methods),
-            response_model=route.response_model,
-            status_code=route.status_code,
-            dependencies=route.dependencies,
-            include_in_schema=False,
-        )
 
 # --- HEALTH & UTILITY ENDPOINTS ---
 @app.get("/health", tags=["health"])

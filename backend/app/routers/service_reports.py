@@ -10,7 +10,7 @@ from backend.app.schemas.service_report import ServiceReportCreate, ServiceRepor
 
 router = APIRouter(prefix="/service-reports", tags=["Service Reports"])
 
-@router.get("/", response_model=list[ServiceReportResponse])
+@router.get("", response_model=list[ServiceReportResponse])
 async def get_reports(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -18,7 +18,7 @@ async def get_reports(
     result = await db.execute(select(ServiceReport))
     return result.scalars().all()
 
-@router.post("/", response_model=ServiceReportResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ServiceReportResponse, status_code=status.HTTP_201_CREATED)
 async def create_report(
     payload: ServiceReportCreate,
     db: AsyncSession = Depends(get_db),

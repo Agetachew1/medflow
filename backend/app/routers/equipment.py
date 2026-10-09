@@ -14,7 +14,7 @@ from backend.app.schemas.equipment import EquipmentCreate, EquipmentResponse, Eq
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 EQUIPMENT_NOT_FOUND = "Equipment not found"
 
-@router.get("/")
+@router.get("")
 async def get_all_equipment(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.CLINICAL_ADMIN, UserRole.HOSPITAL_MANAGER, UserRole.FIELD_TECHNICIAN))
@@ -33,7 +33,7 @@ async def get_all_equipment(
     )
     return [dict(row) for row in result.mappings().all()]
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_equipment(
     payload: EquipmentCreate,
     db: AsyncSession = Depends(get_db),

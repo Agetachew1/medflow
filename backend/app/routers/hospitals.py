@@ -71,7 +71,7 @@ async def get_reporting_lines(
         "technicians_with_active_work_orders": count
     }
 
-@router.get("/", response_model=list[HospitalResponse])
+@router.get("", response_model=list[HospitalResponse])
 async def list_hospitals(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
@@ -91,7 +91,7 @@ async def get_hospital(
     return hospital
 
 @router.post(
-    "/",
+    "",
     response_model=HospitalResponse,
     status_code=status.HTTP_201_CREATED,
 )

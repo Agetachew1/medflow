@@ -13,7 +13,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 HOSPITAL_NOT_FOUND = "Hospital not found"
 
 @router.post(
-    "/",
+    "",
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"description": "Username already taken"},
@@ -48,7 +48,7 @@ async def create_user(
     
     return {"message": f"User {new_user.username} created successfully."}
 
-@router.get("/", response_model=list[UserResponse])
+@router.get("", response_model=list[UserResponse])
 async def list_users(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
