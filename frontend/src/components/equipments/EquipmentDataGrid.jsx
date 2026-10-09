@@ -15,15 +15,18 @@ const columns = [
         renderCell: (params) => {
             const isLow = params.value < 20;
             return (
-                <span style={{ 
-                    color: isLow ? '#d32f2f' : 'inherit', 
-                    fontWeight: isLow ? 'bold' : 'normal',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                }}>
+                <Box
+                    component="span"
+                    sx={{
+                        color: isLow ? 'error.main' : 'text.primary',
+                        fontWeight: isLow ? 'bold' : 'normal',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                    }}
+                >
                     {params.value}% {isLow && "⚠️"}
-                </span>
+                </Box>
             );
         }
     },
@@ -198,21 +201,8 @@ function EquipmentDataGrid({ onSuccess, canManage = false }) {
                     pageSizeOptions={[5, 10, 25]}
                     sx={{
                         border: 'none',
-                        backgroundColor: 'white',
-                        boxShadow: '0px 4px 20px rgba(0,0,0,0.04)',
+                        backgroundColor: 'background.paper',
                         borderRadius: 2,
-                        '& .MuiDataGrid-columnHeaders': {
-                            backgroundColor: '#FAFAFB',
-                            color: '#4A5568',
-                            fontWeight: 700,
-                            borderBottom: '2px solid #EDF2F7',
-                        },
-                        '& .MuiDataGrid-row:hover': {
-                            backgroundColor: '#F7FAFC',
-                        },
-                        '& .MuiDataGrid-cell': {
-                            borderBottom: '1px solid #EDF2F7',
-                        },
                     }}
                 />
             </Box>

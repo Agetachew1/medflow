@@ -40,8 +40,8 @@ function ReliabilityMetrics() {
                         <TableRow key={row.model}>
                             <TableCell>{row.model}</TableCell>
                             <TableCell align="right">{row.total_work_orders}</TableCell>
-                            <TableCell align="right" sx={{ color: 'green' }}>{row.completed_count}</TableCell>
-                            <TableCell align="right" sx={{ color: 'red' }}>{row.failed_count}</TableCell>
+                            <TableCell align="right" sx={{ color: 'success.main' }}>{row.completed_count}</TableCell>
+                            <TableCell align="right" sx={{ color: 'error.main' }}>{row.failed_count}</TableCell>
                         </TableRow>
                     ))}
                 </TableBody>

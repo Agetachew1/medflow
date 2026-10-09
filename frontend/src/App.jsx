@@ -1,10 +1,11 @@
-import { Alert, Box, Card, CardContent, Container, CssBaseline, Snackbar, ThemeProvider, Typography, createTheme } from '@mui/material';
+import { Alert, Box, Card, CardContent, Container, Snackbar, Typography } from '@mui/material';
 import { useEffect, useState, useContext } from 'react';
 
 // Layout & Auth
 import AppHeader from './components/layout/AppHeader.jsx';
 import LoginForm from './components/auth/LoginForm.jsx';
 import { AuthProvider, AuthContext } from './context/AuthContext.jsx';
+import { ThemeModeProvider } from './context/ThemeModeProvider.jsx';
 
 // Data Grids
 import EquipmentDataGrid from './components/equipments/EquipmentDataGrid.jsx';
@@ -17,49 +18,6 @@ import apiClient from './api/client.js';
 import ReliabilityMetrics from './components/analytics/ReliabilityMetrics.jsx';
 import MaintenanceFlags from './components/analytics/MaintenanceFlags.jsx';
 import ReportingLines from './components/analytics/ReportingLines.jsx';
-
-const corporateTheme = createTheme({
-    palette: {
-        mode: 'light',
-        primary: {
-            main: '#003B70',
-            light: '#0055A5',
-        },
-        secondary: {
-            main: '#00B4C5',
-        },
-        background: {
-            default: '#F4F7F9',
-            paper: '#FFFFFF',
-        },
-    },
-    typography: {
-        fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-        h6: { fontWeight: 600 },
-        button: { textTransform: 'none', fontWeight: 600 },
-    },
-    shape: {
-        borderRadius: 8,
-    },
-    components: {
-        MuiAppBar: {
-            styleOverrides: {
-                root: {
-                    boxShadow: '0px 2px 10px rgba(0,0,0,0.08)',
-                    background: 'linear-gradient(90deg, #003B70 0%, #002244 100%)',
-                },
-            },
-        },
-        MuiButton: {
-            styleOverrides: {
-                root: {
-                    boxShadow: 'none',
-                    '&:hover': { boxShadow: '0px 2px 8px rgba(0,0,0,0.15)' },
-                },
-            },
-        },
-    },
-});
 
 function DashboardMetrics() {
   const [metrics, setMetrics] = useState(null);
@@ -207,17 +165,23 @@ function Dashboard() {
 
 function AppContent() {
   const { user } = useContext(AuthContext);
-  return user ? <Dashboard /> : <LoginForm />;
+  return user ? (
+    <Dashboard />
+  ) : (
+    <>
+      <AppHeader />
+      <LoginForm />
+    </>
+  );
 }
 
 function App() {
   return (
-    <ThemeProvider theme={corporateTheme}>
-      <CssBaseline />
+    <ThemeModeProvider>
       <AuthProvider>
         <AppContent />
       </AuthProvider>
-    </ThemeProvider>
+    </ThemeModeProvider>
   );
 }
 

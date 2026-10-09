@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
     aws_region_name: str = "us-east-1"
-    jwt_secret_key: str = "temporary-dev-key-for-medflow-local-only"
+    jwt_secret_key: str = "43fde73cb34a4bf85a413f7d1dfe33cced712bb73272e5a10caa83d8ce40119a"
     
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
