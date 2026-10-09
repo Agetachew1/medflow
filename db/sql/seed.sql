@@ -34,7 +34,8 @@ FROM (
     VALUES
         ('admin_abe', 'clinical_admin', 'Mercy General'),
         ('tech_john', 'field_technician', 'Mercy General'),
-        ('tech_mike', 'field_technician', 'St. Jude''s')
+        ('tech_mike', 'field_technician', 'St. Jude''s'),
+        ('auditor_amy', 'auditor', 'Mercy General')
 ) AS seed(username, role, hospital_name)
 JOIN LATERAL (
     SELECT id

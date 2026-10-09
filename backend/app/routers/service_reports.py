@@ -34,11 +34,6 @@ def _s3_client():
             retries={"total_max_attempts": 2},
         ),
     }
-    if settings.aws_access_key_id and settings.aws_secret_access_key:
-        client_options.update(
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-        )
     return boto3.client("s3", **client_options)
 
 
@@ -141,6 +136,13 @@ async def upload_service_report(
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Report file exceeds the configured size limit",
+        )
+
+    allowed_types = ("image/", "text/plain", "application/pdf")
+    if not (file.content_type or "").startswith(allowed_types):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only images, .txt and .pdf files are allowed",
         )
 
     suffix = os.path.splitext(file.filename or "")[1]
