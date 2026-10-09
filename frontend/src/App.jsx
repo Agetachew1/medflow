@@ -18,6 +18,8 @@ import apiClient from './api/client.js';
 import ReliabilityMetrics from './components/analytics/ReliabilityMetrics.jsx';
 import MaintenanceFlags from './components/analytics/MaintenanceFlags.jsx';
 import ReportingLines from './components/analytics/ReportingLines.jsx';
+import InactiveRecordsPanel from './components/audit/InactiveRecordsPanel.jsx';
+import WorkOrderHistoryGrid from './components/audit/WorkOrderHistoryGrid.jsx';
 
 function DashboardMetrics() {
   const [metrics, setMetrics] = useState(null);
@@ -28,14 +30,14 @@ function DashboardMetrics() {
     async function fetchMetrics() {
       try {
         const [equipment, lowCharge, maintenanceFlags, discrepancies] = await Promise.all([
-          apiClient.get('/equipment/'),
+          apiClient.get('/equipment/', { params: { page: 1, size: 1 } }),
           apiClient.get('/equipment/low-charge'),
           apiClient.get('/hospitals/maintenance-flags'),
           apiClient.get('/work-orders/discrepancies'),
         ]);
         if (isMounted) {
           setMetrics([
-            { title: 'Total Equipment', value: equipment.data.length },
+            { title: 'Total Equipment', value: equipment.data.total },
             { title: 'Low Charge (<20%)', value: lowCharge.data.length },
             { title: 'Hospitals Flagged', value: maintenanceFlags.data.length },
             { title: 'Co-Location Discrepancies', value: discrepancies.data.length },
@@ -76,14 +78,26 @@ function DashboardMetrics() {
 }
 
 function Dashboard() {
-  const { user, logout } = useContext(AuthContext);
+  const { user, logout, hasPermission } = useContext(AuthContext);
   const [notification, setNotification] = useState(null);
-  const isAdmin = user?.role === 'clinical_admin';
-  const isTechnician = user?.role === 'field_technician';
+  const canManageUsers = hasPermission('users:manage');
+  const canViewRoles = hasPermission('roles:read');
+  const canWriteAssets = hasPermission('asset:write');
+  const canReadAssignedJobs = hasPermission('job:read_assigned');
+  const canReadAdvancedAnalytics = hasPermission('analytics:advanced_read');
+  const canReadInactiveRecords = hasPermission('records:inactive_read');
+  const canReadAudit = hasPermission('audit:read');
+  const canReadAllJobs = hasPermission('job:read');
 
   return (
     <>
-      <AppHeader username={user?.sub} role={user?.role} onLogout={logout} />
+      <AppHeader
+        username={user?.sub}
+        role={user?.role}
+        onLogout={logout}
+        canManageUsers={canManageUsers}
+        canViewRoles={canViewRoles}
+      />
       
       <Container maxWidth="lg" sx={{ mt: 4, mb: 8 }}>
         <DashboardMetrics />
@@ -92,10 +106,16 @@ function Dashboard() {
           Equipment Overview
         </Typography>
         <Box sx={{ mb: 4 }}>
-          <EquipmentDataGrid onSuccess={setNotification} canManage={isAdmin} />
+          <EquipmentDataGrid
+            onSuccess={setNotification}
+            canManage={canWriteAssets}
+            canViewAudit={canReadAudit}
+          />
         </Box>
 
-        {isAdmin && (
+          {canReadInactiveRecords && <InactiveRecordsPanel />}
+
+        {canReadAdvancedAnalytics && (
           <>
             <Typography variant="h5" component="h2" gutterBottom color="primary.main">
               Co-Location Discrepancies
@@ -106,7 +126,7 @@ function Dashboard() {
           </>
         )}
 
-        {isTechnician && (
+        {canReadAssignedJobs && (
           <>
             <Typography variant="h5" component="h2" gutterBottom color="primary.main">
               My Work Orders
@@ -114,6 +134,15 @@ function Dashboard() {
             <Box sx={{ mb: 4 }}>
               <MyWorkOrders />
             </Box>
+          </>
+        )}
+
+        {canReadAllJobs && canReadAudit && (
+          <>
+            <Typography variant="h5" component="h2" gutterBottom color="primary.main">
+              Work Order History
+            </Typography>
+            <WorkOrderHistoryGrid />
           </>
         )}
 
@@ -138,7 +167,7 @@ function Dashboard() {
           <LowChargeAlert />
         </Box>
 
-        {isAdmin && (
+        {canReadAdvancedAnalytics && (
           <>
             <Typography variant="h5" component="h2" gutterBottom color="primary.main">
               Reporting Lines

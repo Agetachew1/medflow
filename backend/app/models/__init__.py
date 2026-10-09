@@ -4,6 +4,8 @@ from backend.app.models.hospital import Hospital
 from backend.app.models.work_order import WorkOrder
 from backend.app.models.service_report import ServiceReport
 from backend.app.models.user import User
+from backend.app.models.refresh_token import RefreshToken
+from backend.app.models.audit_entry import AuditEntry
 from backend.app.models.enums import (
     EquipmentStatus,
     WorkOrderPriority,
@@ -20,5 +22,7 @@ __all__ = [
     "WorkOrderStatus",
     "ServiceReport",
     "User",
+    "RefreshToken",
+    "AuditEntry",
     "UserRole",
 ]

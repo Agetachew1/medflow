@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from backend.app.models.enums import EquipmentStatus
+from datetime import datetime
 
 class EquipmentBase(BaseModel):
     serial_number: str
@@ -30,6 +31,9 @@ class EquipmentUpdate(BaseModel):
 
 class EquipmentResponse(EquipmentBase):
     id: int
+    is_active: bool = True
+    deleted_at: datetime | None = None
+    deleted_by: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
     

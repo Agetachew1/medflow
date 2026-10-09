@@ -21,3 +21,4 @@ class UserRole(str, Enum):
     CLINICAL_ADMIN = "clinical_admin"
     FIELD_TECHNICIAN = "field_technician"
     HOSPITAL_MANAGER = "hospital_manager"
+    AUDITOR = "auditor"

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, Stack, TextField } from '@mui/material';
 import apiClient from "../../api/client.js";
+import AuditHistoryDialog from '../audit/AuditHistoryDialog.jsx';
 
 const columns = [
     { field: 'id', headerName: 'ID', width: 70 },
@@ -65,31 +66,66 @@ const EMPTY_FORM = {
     status: 'ACTIVE',
 };
 
-function EquipmentDataGrid({ onSuccess, canManage = false }) {
+function EquipmentDataGrid({ onSuccess, canManage = false, canViewAudit = false }) {
     const [equipmentList, setEquipmentList] = useState([]);
+    const [rowCount, setRowCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [siteId, setSiteId] = useState('');
+    const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 10 });
+    const [sortModel, setSortModel] = useState([{ field: 'id', sort: 'asc' }]);
+    const [reloadToken, setReloadToken] = useState(0);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [dialogError, setDialogError] = useState(null);
     const [formValues, setFormValues] = useState(EMPTY_FORM);
     const [editingEquipment, setEditingEquipment] = useState(null);
+    const [historyEquipment, setHistoryEquipment] = useState(null);
 
-    async function fetchEquipment() {
+    const fetchEquipment = useCallback(async (signal) => {
         setLoading(true);
         try {
-            const response = await apiClient.get('/equipment/');
-            setEquipmentList(response.data);
+            const sort = sortModel[0];
+            const response = await apiClient.get('/equipment/', {
+                signal,
+                params: {
+                    page: paginationModel.page + 1,
+                    size: paginationModel.pageSize,
+                    search: debouncedSearch || undefined,
+                    status: statusFilter || undefined,
+                    site_id: siteId || undefined,
+                    sort_by: sort?.field === 'hospital_id' ? 'site_id' : (sort?.field || 'id'),
+                    sort_dir: sort?.sort || 'asc',
+                },
+            });
+            if (signal?.aborted) return;
+            setEquipmentList(response.data.items);
+            setRowCount(response.data.total);
             setError(null);
         } catch {
-            setError('Could not load equipment data.');
+            if (!signal?.aborted) setError('Could not load equipment data.');
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) setLoading(false);
         }
-    }
+    }, [debouncedSearch, paginationModel, siteId, sortModel, statusFilter]);
 
     useEffect(() => {
-        void fetchEquipment();
-    }, []);
+        const timeout = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+        return () => window.clearTimeout(timeout);
+    }, [search]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        void fetchEquipment(controller.signal);
+        return () => controller.abort();
+    }, [fetchEquipment, reloadToken]);
+
+    const handleFilterChange = (setter) => (event) => {
+        setter(event.target.value);
+        setPaginationModel((current) => ({ ...current, page: 0 }));
+    };
 
     const handleFieldChange = (field) => (event) => {
         setDialogError(null);
@@ -126,7 +162,7 @@ function EquipmentDataGrid({ onSuccess, canManage = false }) {
                 );
             }
             setEditingEquipment(null);
-            await fetchEquipment();
+            setReloadToken((current) => current + 1);
         } catch (err) {
             setDialogError(err.response?.data?.detail || 'Could not save equipment.');
         }
@@ -150,32 +186,33 @@ function EquipmentDataGrid({ onSuccess, canManage = false }) {
         try {
             await apiClient.delete(`/equipment/${equipment.id}`);
             if (onSuccess) onSuccess(`Equipment ${equipment.serial_number} deleted.`);
-            await fetchEquipment();
+            setReloadToken((current) => current + 1);
         } catch (err) {
             setError(err.response?.data?.detail || 'Could not delete equipment.');
         }
     };
 
-    const gridColumns = canManage
-        ? [
-            ...columns,
-            {
-                field: 'actions',
-                headerName: 'Actions',
-                width: 170,
-                sortable: false,
-                filterable: false,
-                renderCell: (params) => (
-                    <Stack direction="row" spacing={1}>
-                        <Button size="small" onClick={() => handleEdit(params.row)}>Edit</Button>
+    const gridColumns = [
+        ...columns,
+        {
+            field: 'actions',
+            headerName: 'Actions',
+            width: canManage ? 250 : 100,
+            sortable: false,
+            filterable: false,
+            renderCell: (params) => (
+                <Stack direction="row" spacing={1}>
+                    {canViewAudit && <Button size="small" onClick={() => setHistoryEquipment(params.row)}>History</Button>}
+                    {canManage && <Button size="small" onClick={() => handleEdit(params.row)}>Edit</Button>}
+                    {canManage && (
                         <Button size="small" color="error" onClick={() => handleDelete(params.row)}>
                             Delete
                         </Button>
-                    </Stack>
-                ),
-            },
-        ]
-        : columns;
+                    )}
+                </Stack>
+            ),
+        },
+    ];
 
     if (loading) return <CircularProgress />;
     if (error) return <Alert severity="error">{error}</Alert>;
@@ -188,6 +225,39 @@ function EquipmentDataGrid({ onSuccess, canManage = false }) {
                 setFormValues(EMPTY_FORM);
                 setDialogOpen(true);
             }}>+ Add Equipment</Button>}
+
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
+                <TextField
+                    label="Search model or serial number"
+                    value={search}
+                    onChange={handleFilterChange(setSearch)}
+                    size="small"
+                />
+                <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel id="equipment-status-filter-label">Status</InputLabel>
+                    <Select
+                        labelId="equipment-status-filter-label"
+                        label="Status"
+                        value={statusFilter}
+                        onChange={handleFilterChange(setStatusFilter)}
+                    >
+                        <MenuItem value="">All statuses</MenuItem>
+                        {EDIT_STATUS_OPTIONS.map((option) => (
+                            <MenuItem key={option} value={option.toLowerCase()}>
+                                {option.replaceAll('_', ' ')}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+                <TextField
+                    label="Hospital ID"
+                    type="number"
+                    value={siteId}
+                    onChange={handleFilterChange(setSiteId)}
+                    size="small"
+                    slotProps={{ htmlInput: { min: 1 } }}
+                />
+            </Stack>
             
             <Box sx={{ height: 400, width: '100%' }}>
                 <DataGrid 
@@ -195,10 +265,16 @@ function EquipmentDataGrid({ onSuccess, canManage = false }) {
                     columns={gridColumns}
                     getRowId={(row) => row.id} 
                     showToolbar
-                    initialState={{
-                        pagination: { paginationModel: { page: 0, pageSize: 5 } },
-                    }}
-                    pageSizeOptions={[5, 10, 25]}
+                    rowCount={rowCount}
+                    paginationMode="server"
+                    sortingMode="server"
+                    filterMode="server"
+                    paginationModel={paginationModel}
+                    onPaginationModelChange={setPaginationModel}
+                    sortModel={sortModel}
+                    onSortModelChange={setSortModel}
+                    pageSizeOptions={[10, 25, 50]}
+                    disableColumnFilter
                     sx={{
                         border: 'none',
                         backgroundColor: 'background.paper',
@@ -233,6 +309,14 @@ function EquipmentDataGrid({ onSuccess, canManage = false }) {
                     </Button>
                 </DialogActions>
             </Dialog>
+            {historyEquipment && (
+                <AuditHistoryDialog
+                    open
+                    recordType="asset"
+                    recordId={historyEquipment.id}
+                    onClose={() => setHistoryEquipment(null)}
+                />
+            )}
         </Box>
     );
 }

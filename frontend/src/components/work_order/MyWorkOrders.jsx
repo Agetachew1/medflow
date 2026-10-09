@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, CircularProgress, MenuItem, Select } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, MenuItem, Select } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import apiClient from '../../api/client.js';
+import AuditHistoryDialog from '../audit/AuditHistoryDialog.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 const STATUS_OPTIONS = ['pending', 'in_progress', 'completed', 'failed'];
 
 function MyWorkOrders() {
+    const { hasPermission } = useAuth();
     const [workOrders, setWorkOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [savingId, setSavingId] = useState(null);
+    const [historyWorkOrderId, setHistoryWorkOrderId] = useState(null);
 
     useEffect(() => {
         async function fetchWorkOrders() {
@@ -71,6 +75,18 @@ function MyWorkOrders() {
                 </Select>
             ),
         },
+        ...(hasPermission('audit:read') ? [{
+            field: 'history',
+            headerName: 'History',
+            width: 120,
+            sortable: false,
+            filterable: false,
+            renderCell: (params) => (
+                <Button size="small" onClick={() => setHistoryWorkOrderId(params.row.id)}>
+                    History
+                </Button>
+            ),
+        }] : []),
     ];
 
     if (loading) return <CircularProgress />;
@@ -91,6 +107,14 @@ function MyWorkOrders() {
                     pageSizeOptions={[5, 10, 25]}
                 />
             </Box>
+            {historyWorkOrderId !== null && (
+                <AuditHistoryDialog
+                    open
+                    recordType="job"
+                    recordId={historyWorkOrderId}
+                    onClose={() => setHistoryWorkOrderId(null)}
+                />
+            )}
         </Box>
     );
 }

@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.dependencies import get_db, require_role
+from backend.app.dependencies import get_db, require_permission
 from backend.app.models.hospital import Hospital
 from backend.app.models.user import User
-from backend.app.models.enums import UserRole
+from backend.app.permissions import Permission
 from backend.app.security import hash_password
 from backend.app.schemas.user import AdminUserCreate, UserResponse, UserUpdate
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 HOSPITAL_NOT_FOUND = "Hospital not found"
 
 @router.post(
-    "/",
+    "",
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"description": "Username already taken"},
@@ -23,7 +23,7 @@ HOSPITAL_NOT_FOUND = "Hospital not found"
 async def create_user(
     payload: AdminUserCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN))
+    _: User = Depends(require_permission(Permission.USERS_MANAGE))
 ):
     existing_user = await db.execute(select(User).where(User.username == payload.username))
     if existing_user.scalar_one_or_none():
@@ -48,10 +48,10 @@ async def create_user(
     
     return {"message": f"User {new_user.username} created successfully."}
 
-@router.get("/", response_model=list[UserResponse])
+@router.get("", response_model=list[UserResponse])
 async def list_users(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(require_permission(Permission.USERS_MANAGE)),
 ):
     result = await db.execute(select(User).order_by(User.id))
     return result.scalars().all()
@@ -61,7 +61,7 @@ async def update_user(
     user_id: int,
     payload: UserUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(require_permission(Permission.USERS_MANAGE)),
 ):
     user = await db.get(User, user_id)
     if user is None:
@@ -93,7 +93,7 @@ async def update_user(
 async def delete_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(require_permission(Permission.USERS_MANAGE)),
 ):
     user = await db.get(User, user_id)
     if user is None:

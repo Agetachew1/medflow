@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.dependencies import get_current_user, get_db, require_role
+from backend.app.dependencies import get_db, require_permission
 from backend.app.models.hospital import Hospital
 from backend.app.models.equipment import Equipment
 from backend.app.models.user import User
 from backend.app.models.work_order import WorkOrder
-from backend.app.models.enums import EquipmentStatus, UserRole, WorkOrderStatus
+from backend.app.models.enums import EquipmentStatus, WorkOrderStatus
+from backend.app.permissions import Permission
 from backend.app.schemas.hospital import HospitalCreate, HospitalResponse, HospitalUpdate
 
 router = APIRouter(prefix="/hospitals", tags=["hospitals"])
@@ -16,7 +17,7 @@ HOSPITAL_NOT_FOUND = "Hospital not found"
 @router.get("/maintenance-flags")
 async def get_maintenance_flags(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission(Permission.ANALYTICS_READ)),
 ):
     maintenance_count = func.sum(
         case(
@@ -34,7 +35,10 @@ async def get_maintenance_flags(
             func.count(Equipment.id).label("total_equipment"),
             maintenance_count.label("maintenance_count"),
         )
-        .join(Equipment, Equipment.facility_id == Hospital.id)
+        .join(
+            Equipment,
+            (Equipment.facility_id == Hospital.id) & Equipment.is_active.is_(True),
+        )
         .group_by(Hospital.id, Hospital.name)
         .having(
             maintenance_count * 1.0 / func.count(Equipment.id) > 0.3
@@ -48,14 +52,16 @@ async def get_maintenance_flags(
 async def get_reporting_lines(
     supervisor_id: int, 
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN))
+    _: User = Depends(require_permission(Permission.ANALYTICS_ADVANCED_READ))
 ):
     # This query perfectly counts technicians who report to this supervisor AND have pending work orders
     statement = (
         select(func.count(func.distinct(User.id)))
         .join(Hospital, Hospital.id == User.hospital_id)
         .join(WorkOrder, WorkOrder.technician_id == User.id)
+        .join(Equipment, Equipment.id == WorkOrder.equipment_id)
         .where(Hospital.supervisor_id == supervisor_id)
+        .where(WorkOrder.is_active.is_(True), Equipment.is_active.is_(True))
         .where(
             WorkOrder.status.in_(
                 [WorkOrderStatus.PENDING, WorkOrderStatus.IN_PROGRESS]
@@ -71,10 +77,10 @@ async def get_reporting_lines(
         "technicians_with_active_work_orders": count
     }
 
-@router.get("/", response_model=list[HospitalResponse])
+@router.get("", response_model=list[HospitalResponse])
 async def list_hospitals(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission(Permission.HOSPITAL_READ)),
 ):
     result = await db.execute(select(Hospital).order_by(Hospital.id))
     return result.scalars().all()
@@ -83,7 +89,7 @@ async def list_hospitals(
 async def get_hospital(
     hospital_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(require_permission(Permission.HOSPITAL_READ_DETAIL)),
 ):
     hospital = await db.get(Hospital, hospital_id)
     if hospital is None:
@@ -91,14 +97,14 @@ async def get_hospital(
     return hospital
 
 @router.post(
-    "/",
+    "",
     response_model=HospitalResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_hospital(
     payload: HospitalCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(require_permission(Permission.HOSPITAL_WRITE)),
 ):
     hospital = Hospital(**payload.model_dump())
     db.add(hospital)
@@ -111,7 +117,7 @@ async def update_hospital(
     hospital_id: int,
     payload: HospitalUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(require_permission(Permission.HOSPITAL_WRITE)),
 ):
     hospital = await db.get(Hospital, hospital_id)
     if hospital is None:
@@ -128,7 +134,7 @@ async def update_hospital(
 async def delete_hospital(
     hospital_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.CLINICAL_ADMIN)),
+    _: User = Depends(require_permission(Permission.HOSPITAL_WRITE)),
 ):
     hospital = await db.get(Hospital, hospital_id)
     if hospital is None:

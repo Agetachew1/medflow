@@ -4,6 +4,7 @@ asyncpg
 pydantic==2.13.4
 pydantic-core==2.46.4
 pydantic-settings
+boto3==1.43.82
 bcrypt
 pyjwt
 mangum

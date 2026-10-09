@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
 from backend.app.models.enums import WorkOrderPriority, WorkOrderStatus
 
@@ -18,6 +20,9 @@ class WorkOrderUpdate(BaseModel):
 
 class WorkOrderResponse(WorkOrderBase):
     id: int
+    is_active: bool = True
+    deleted_at: datetime | None = None
+    deleted_by: int | None = None
     
     model_config = ConfigDict(from_attributes=True)
     

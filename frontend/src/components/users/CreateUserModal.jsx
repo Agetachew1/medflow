@@ -35,6 +35,7 @@ export default function CreateUserModal({ open, onClose }) {
                         <MenuItem value="clinical_admin">Clinical Admin</MenuItem>
                         <MenuItem value="hospital_manager">Hospital Manager</MenuItem>
                         <MenuItem value="field_technician">Field Technician</MenuItem>
+                        <MenuItem value="auditor">Auditor</MenuItem>
                     </Select>
                 </FormControl>
                 <TextField label="Hospital ID" type="number" value={hospitalId} onChange={e => setHospitalId(e.target.value)} fullWidth />
