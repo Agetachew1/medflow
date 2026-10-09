@@ -50,6 +50,21 @@ app.include_router(hospital_router)
 app.include_router(service_report_router)
 app.include_router(users_router) # Activate the admin user creation endpoint
 
+from fastapi.routing import APIRoute
+
+# Lambda Function URLs strip trailing slashes, so register a slash-less twin of every "/x/" route.
+for route in list(app.routes):
+    if isinstance(route, APIRoute) and route.path.endswith("/") and route.path != "/":
+        app.add_api_route(
+            route.path.rstrip("/"),
+            route.endpoint,
+            methods=list(route.methods),
+            response_model=route.response_model,
+            status_code=route.status_code,
+            dependencies=route.dependencies,
+            include_in_schema=False,
+        )
+
 # --- HEALTH & UTILITY ENDPOINTS ---
 @app.get("/health", tags=["health"])
 async def health_check() -> dict[str, str]:
